@@ -1,0 +1,2 @@
+use_shortest_filepath.diff
+fix-FTBFS-on-mipsel-and-m68k-src-solid-predicate_parser.c.patch
