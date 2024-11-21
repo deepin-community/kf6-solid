@@ -1,0 +1,54 @@
+From: James Cowgill <jcowgill@debian.org>
+Date: Wed, 30 Nov 2016 15:50:47 +0100
+Subject: fix FTBFS on mipsel and m68k - src/solid/predicate_parser.c: No such
+ file or directory
+
+In src/solid/CMakeLists.txt, the parser is generated using bison_target
+which uses add_custom_command under the hood. The output file is then
+added to the list of sources creating a file-level dependency from the
+KF5Solid target to the bison/flex generation command. However, the list
+of sources is later used as part of the KF5Solid_static target. Since
+file-level dependencies cannot cross between targets, the bison
+generation happens twice completely independently as part of the two
+targets. If you are very unlucky, the generation in one target can
+happen at the same time as the compilation of the parser in the other
+target causing a collision.
+
+This patch should fix that by putting the generation in a
+separate target and manually adding a dependency on it. This forces the
+parser to be generated before anything is compiled.
+---
+ src/solid/CMakeLists.txt         | 2 ++
+ src/solid/devices/CMakeLists.txt | 1 +
+ 2 files changed, 3 insertions(+)
+
+--- a/src/solid/CMakeLists.txt
++++ b/src/solid/CMakeLists.txt
+@@ -9,6 +9,7 @@ endif()
+ set(solid_LIB_SRCS ${solid_LIB_SRCS} ${solid_QM_LOADER})
+
+ add_library(KF6Solid  ${solid_LIB_SRCS})
++add_dependencies(KF6Solid SolidParserTarget)
+ set(solid_BUILD_INCLUDE_DIRS
+     ${CMAKE_CURRENT_BINARY_DIR}
+     ${CMAKE_CURRENT_SOURCE_DIR}/..
+@@ -105,6 +106,7 @@ install(TARGETS KF6Solid EXPORT KF6SolidTargets ${KF_INSTALL_TARGETS_DEFAULT_ARG
+
+ if (BUILD_TESTING)
+   add_library(KF6Solid_static STATIC ${solid_LIB_SRCS})
++  add_dependencies(KF6Solid_static SolidParserTarget)
+   set_target_properties(KF6Solid_static PROPERTIES COMPILE_FLAGS -DSOLID_STATIC_DEFINE=1)
+
+   target_link_libraries(KF6Solid_static PUBLIC Qt6::Core)
+diff --git a/src/solid/devices/CMakeLists.txt b/src/solid/devices/CMakeLists.txt
+index 7b298e1e..2c29331f 100644
+--- a/src/solid/devices/CMakeLists.txt
++++ b/src/solid/devices/CMakeLists.txt
+@@ -101,6 +101,7 @@ flex_target(SolidLexer
+ )
+ add_flex_bison_dependency(SolidLexer SolidParser)
+ list(APPEND solid_LIB_SRCS ${BISON_SolidParser_OUTPUTS} ${FLEX_SolidLexer_OUTPUTS})
++add_custom_target(SolidParserTarget DEPENDS ${BISON_SolidParser_OUTPUTS} ${FLEX_SolidLexer_OUTPUTS})
+
+ include(CheckIncludeFiles)
+ include(CheckFunctionExists)
