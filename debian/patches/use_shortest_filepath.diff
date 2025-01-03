@@ -1,0 +1,73 @@
+From: Debian/Kubuntu Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Date: Sun, 12 Jun 2016 21:57:24 +0200
+Subject: Return the shortest filePath to avoid errors like https://bugs.debian.org/762950
+
+---
+ src/solid/devices/backends/udisks2/udisksstorageaccess.cpp |   27 ++++++++++---
+ 1 file changed, 21 insertions(+), 6 deletions(-)
+
+--- a/src/solid/devices/backends/udisks2/udisksstorageaccess.cpp
++++ b/src/solid/devices/backends/udisks2/udisksstorageaccess.cpp
+@@ -214,6 +214,31 @@ static QString baseMountPoint(const QByt
+     return mountPoint;
+ }
+ 
++// We return the shortest filePath to avoid errors like:
++// https://bugs.debian.org/762950
++static inline QString get_shortest(const QByteArrayList& mntPoints)
++{
++    if (mntPoints.isEmpty()) {
++        return QString();
++    }
++    QByteArray shortestBA = mntPoints.first();
++    if (shortestBA.endsWith('\x00')) {
++        shortestBA.chop(1);
++    }
++    QString shortest = QFile::decodeName(shortestBA);
++    for (int i = 1; i < mntPoints.count(); i++) {
++        QByteArray currentBA = mntPoints.at(i);
++        if (currentBA.endsWith('\x00')) {
++            currentBA.chop(1);
++        }
++        QString current = QFile::decodeName(currentBA);
++        if (shortest.length() > current.length()) {
++            shortest = current;
++        }
++    }
++    return shortest;
++}
++
+ QString StorageAccess::filePath() const
+ {
+     if (isLuksDevice()) { // encrypted (and unlocked) device
+@@ -223,15 +248,8 @@ QString StorageAccess::filePath() const
+         }
+         Device holderDevice(path);
+         const auto mntPoints = qdbus_cast<QByteArrayList>(holderDevice.prop(QStringLiteral("MountPoints")));
+-        if (!mntPoints.isEmpty()) {
+-            QByteArray first = mntPoints.first();
+-            if (first.endsWith('\x00')) {
+-                first.chop(1);
+-            }
+-            return QFile::decodeName(first); // FIXME Solid doesn't support multiple mount points
+-        } else {
+-            return QString();
+-        }
++        // FIXME Solid doesn't support multiple mount points
++        return get_shortest(mntPoints);
+     }
+ 
+     const auto mntPoints = qdbus_cast<QByteArrayList>(m_device->prop(QStringLiteral("MountPoints")));
+@@ -239,11 +257,7 @@ QString StorageAccess::filePath() const
+         return {};
+     }
+ 
+-    QByteArray first = mntPoints.first();
+-    if (first.endsWith('\x00')) {
+-        first.chop(1);
+-    }
+-    const QString potentialMountPoint = QFile::decodeName(first);
++    const QString potentialMountPoint = get_shortest(mntPoints);
+ 
+     if (mntPoints.size() == 1) {
+         return potentialMountPoint;
